@@ -1,0 +1,2 @@
+# Tar the thing
+tar -cvzf ../nagios-$VERSION.tar.gz --exclude=.git --transform "s/^\./nagios-$VERSION/" .
