@@ -21,6 +21,7 @@ DIV.status {  font-size: 10pt;  text-align: center; }
 .statusUNKNOWN {  background-color: #FF9900; }
 .statusWARNING {  background-color: #FFFF00; }
 .statusCRITICAL {  background-color: #F83838; }
+.statusCRITICALACK {  background-color: #0000FF; }
 
 .statusHOSTPENDING {  background-color: #ACACAC; }
 .statusHOSTUP {  background-color: #33FF00; }
