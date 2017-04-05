@@ -1672,14 +1672,19 @@ void show_service_detail(void) {
 				}
 			else if(temp_status->status == SERVICE_WARNING) {
 				strncpy(status, "WARNING", sizeof(status));
-				status_class = "WARNING";
-				if(temp_status->problem_has_been_acknowledged == TRUE)
+				if(temp_status->problem_has_been_acknowledged == TRUE) {
+					status_class = "WARNINGACK";
 					status_bg_class = "BGWARNINGACK";
-				else if(temp_status->scheduled_downtime_depth > 0)
+				}
+				else if(temp_status->scheduled_downtime_depth > 0) {
+					status_class = "WARNING";
 					status_bg_class = "BGWARNINGSCHED";
-				else
+				}
+				else {
+					status_class = "WARNING";
 					status_bg_class = "BGWARNING";
 				}
+			}
 			else if(temp_status->status == SERVICE_UNKNOWN) {
 				strncpy(status, "UNKNOWN", sizeof(status));
 				status_class = "UNKNOWN";
@@ -1692,14 +1697,19 @@ void show_service_detail(void) {
 				}
 			else if(temp_status->status == SERVICE_CRITICAL) {
 				strncpy(status, "CRITICAL", sizeof(status));
-				status_class = "CRITICAL";
-				if(temp_status->problem_has_been_acknowledged == TRUE)
+				if(temp_status->problem_has_been_acknowledged == TRUE) {
+					status_class = "CRITICALACK";
 					status_bg_class = "BGCRITICALACK";
-				else if(temp_status->scheduled_downtime_depth > 0)
+				}
+				else if(temp_status->scheduled_downtime_depth > 0) {
+					status_class = "CRITICAL";
 					status_bg_class = "BGCRITICALSCHED";
-				else
+				}
+				else {
+					status_class = "CRITICAL";
 					status_bg_class = "BGCRITICAL";
 				}
+			}
 			status[sizeof(status) - 1] = '\x0';
 
 

@@ -38,6 +38,7 @@ div.status {  font-size: 10pt;  text-align: center; }
 .statusHOSTPENDING,.statusPENDING {  background-color: #ACACAC; }
 .statusHOSTUP,.statusOK  {  background-color: #33FF00; }
 .statusHOSTDOWN,.statusCRITICAL  {  background-color: #F83838; }
+.statusCRITICALACK {  background-color: #8a8aff; }
 .statusHOSTDOWNACK {  background-color: #F83838; }
 .statusHOSTDOWNSCHED {  background-color: #F83838; }
 .statusHOSTUNREACHABLE {  background-color: #F83838; }
@@ -94,6 +95,8 @@ td.hostTotals {  text-align: center;  background-color: #e9e9e9; }
 .miniStatusUNKNOWN {  background-color: #FF9900;  text-align: center; }
 .miniStatusWARNING {  background-color: #FFFF00;  text-align: center; }
 .miniStatusCRITICAL {  background-color: #F83838;  text-align: center; }
+.miniStatusCRITICALACK {  background-color: #0000FF;  text-align: center; }
+
 
 .miniStatusUP {  background-color: #33FF00;  text-align: center; }
 .miniStatusDOWN {  background-color: #F83838;  text-align: center; }
