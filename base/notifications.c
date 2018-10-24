@@ -54,7 +54,7 @@ const char *notification_reason_name(unsigned int reason_type)
 		"CUSTOM"
 	};
 
-	if (reason_type < sizeof(names))
+	if (reason_type < ARRAY_SIZE(names))
 		return names[reason_type];
 
 	return "(unknown)";
@@ -222,7 +222,7 @@ int service_notification(service *svc, int type, char *not_author, char *not_dat
 		/* set the notification number macro */
 		asprintf(&mac.x[MACRO_SERVICENOTIFICATIONNUMBER], "%d", svc->current_notification_number);
 
-		/* the $NOTIFICATIONNUMBER$ macro is maintained for backward compatability */
+		/* the $NOTIFICATIONNUMBER$ macro is maintained for backward compatibility */
 		mac.x[MACRO_NOTIFICATIONNUMBER] = strdup(mac.x[MACRO_SERVICENOTIFICATIONNUMBER]);
 
 		/* set the notification id macro */
@@ -342,7 +342,6 @@ int check_service_notification_viability(service *svc, int type, int options) {
 	timeperiod *temp_period;
 	time_t current_time;
 	time_t timeperiod_start;
-	time_t first_problem_time;
 
 	log_debug_info(DEBUGL_FUNCTIONS, 0, "check_service_notification_viability()\n");
 
@@ -547,42 +546,24 @@ int check_service_notification_viability(service *svc, int type, int options) {
 	/* see if enough time has elapsed for first notification (Mathias Sundman) */
 	/* 10/02/07 don't place restrictions on recoveries or non-normal notifications, must use last time ok (or program start) in calculation */
 	/* it is reasonable to assume that if the service was never up, the program start time should be used in this calculation */
-	if(type == NOTIFICATION_NORMAL && svc->current_notification_number == 0 && svc->current_state != STATE_OK) {
+	/* check if delay of notifications is activated (ccztux) */
+	if(type == NOTIFICATION_NORMAL
+	   && svc->first_notification_delay > 0
+	   && svc->current_notification_number == 0
+	   && svc->current_state != STATE_OK)
+	{
+		time_t last_problem_time = svc->last_hard_state_change > 0 ? svc->last_hard_state_change : program_start;
 
-		first_problem_time = svc->last_time_ok > 0 ? svc->last_time_ok : program_start;
-
-		if(current_time < first_problem_time + (time_t)(svc->first_notification_delay * interval_length)) {
+		/* determine the time to use of the last problem point */
+		if(current_time < last_problem_time + (time_t)(svc->first_notification_delay * interval_length)) {
 			log_debug_info(DEBUGL_NOTIFICATIONS, 1, "Not enough time has elapsed since the service changed to a non-OK state, so we should not notify about this problem yet\n");
 			return ERROR;
 			}
-		}
+	}
 
 	/* if this service is currently flapping, don't send the notification */
 	if(svc->is_flapping == TRUE) {
 		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "This service is currently flapping, so we won't send notifications.\n");
-		return ERROR;
-		}
-
-	/***** RECOVERY NOTIFICATIONS ARE GOOD TO GO AT THIS POINT *****/
-	if(svc->current_state == STATE_OK)
-		return OK;
-
-	/* don't notify contacts about this service problem again if the notification interval is set to 0 */
-	if(svc->no_more_notifications == TRUE) {
-		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "We shouldn't re-notify contacts about this service problem.\n");
-		return ERROR;
-		}
-
-	/* if the host is down or unreachable, don't notify contacts about service failures */
-	if(temp_host->current_state != STATE_UP && temp_host->state_type == HARD_STATE) {
-		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "The host is either down or unreachable, so we won't notify contacts about this service.\n");
-		return ERROR;
-		}
-
-	/* don't notify if we haven't waited long enough since the last time (and the service is not marked as being volatile) */
-	if((current_time < svc->next_notification) && svc->is_volatile == FALSE) {
-		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "We haven't waited long enough to re-notify contacts about this service.\n");
-		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "Next valid notification time: %s", ctime(&svc->next_notification));
 		return ERROR;
 		}
 
@@ -607,6 +588,29 @@ int check_service_notification_viability(service *svc, int type, int options) {
 	/* if this host is currently in a flex downtime period, don't send the notification */
 	if(temp_host->pending_flex_downtime > 0 && is_host_in_pending_flex_downtime(temp_host) == TRUE) {
 		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "The host this service is associated with is starting a flex downtime, so we won't send notifications.\n");
+		return ERROR;
+		}
+
+	/***** RECOVERY NOTIFICATIONS ARE GOOD TO GO AT THIS POINT *****/
+	if(svc->current_state == STATE_OK)
+		return OK;
+
+	/* don't notify contacts about this service problem again if the notification interval is set to 0 */
+	if(svc->no_more_notifications == TRUE) {
+		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "We shouldn't re-notify contacts about this service problem.\n");
+		return ERROR;
+		}
+
+	/* if the host is down or unreachable, don't notify contacts about service failures */
+	if(temp_host->current_state != STATE_UP && temp_host->state_type == HARD_STATE) {
+		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "The host is either down or unreachable, so we won't notify contacts about this service.\n");
+		return ERROR;
+		}
+
+	/* don't notify if we haven't waited long enough since the last time (and the service is not marked as being volatile) */
+	if((current_time < svc->next_notification) && svc->is_volatile == FALSE) {
+		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "We haven't waited long enough to re-notify contacts about this service.\n");
+		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "Next valid notification time: %s", ctime(&svc->next_notification));
 		return ERROR;
 		}
 
@@ -1179,7 +1183,7 @@ int host_notification(host *hst, int type, char *not_author, char *not_data, int
 		/* set the notification number macro */
 		asprintf(&mac.x[MACRO_HOSTNOTIFICATIONNUMBER], "%d", hst->current_notification_number);
 
-		/* the $NOTIFICATIONNUMBER$ macro is maintained for backward compatability */
+		/* the $NOTIFICATIONNUMBER$ macro is maintained for backward compatibility */
 		mac.x[MACRO_NOTIFICATIONNUMBER] = strdup(mac.x[MACRO_HOSTNOTIFICATIONNUMBER]);
 
 		/* set the notification id macro */
@@ -1296,7 +1300,6 @@ int host_notification(host *hst, int type, char *not_author, char *not_data, int
 int check_host_notification_viability(host *hst, int type, int options) {
 	time_t current_time;
 	time_t timeperiod_start;
-	time_t first_problem_time;
 
 	log_debug_info(DEBUGL_FUNCTIONS, 0, "check_host_notification_viability()\n");
 
@@ -1470,15 +1473,21 @@ int check_host_notification_viability(host *hst, int type, int options) {
 	/* see if enough time has elapsed for first notification (Mathias Sundman) */
 	/* 10/02/07 don't place restrictions on recoveries or non-normal notifications, must use last time up (or program start) in calculation */
 	/* it is reasonable to assume that if the host was never up, the program start time should be used in this calculation */
-	if(type == NOTIFICATION_NORMAL && hst->current_notification_number == 0 && hst->current_state != HOST_UP) {
+	/* check if delay of notifications is activated (ccztux) */
+	if(type == NOTIFICATION_NORMAL
+	   && hst->first_notification_delay > 0
+	   && hst->current_notification_number == 0
+	   && hst->current_state != STATE_OK)
+	{
 
-		first_problem_time = hst->last_time_up > 0 ? hst->last_time_up : program_start;
+		time_t last_problem_time = hst->last_hard_state_change > 0 ? hst->last_hard_state_change : program_start;
 
-		if(current_time < first_problem_time + (time_t)(hst->first_notification_delay * interval_length)) {
+		/* determine the time to use of the last problem point */
+		if(current_time < last_problem_time + (time_t)(hst->first_notification_delay * interval_length)) {
 			log_debug_info(DEBUGL_NOTIFICATIONS, 1, "Not enough time has elapsed since the host changed to a non-UP state (or since program start), so we shouldn't notify about this problem yet.\n");
 			return ERROR;
-			}
-		}
+                	}
+	}
 
 	/* if this host is currently flapping, don't send the notification */
 	if(hst->is_flapping == TRUE) {
@@ -1486,15 +1495,15 @@ int check_host_notification_viability(host *hst, int type, int options) {
 		return ERROR;
 		}
 
-	/***** RECOVERY NOTIFICATIONS ARE GOOD TO GO AT THIS POINT *****/
-	if(hst->current_state == HOST_UP)
-		return OK;
-
 	/* if this host is currently in a scheduled downtime period, don't send the notification */
 	if(hst->scheduled_downtime_depth > 0) {
 		log_debug_info(DEBUGL_NOTIFICATIONS, 1, "This host is currently in a scheduled downtime, so we won't send notifications.\n");
 		return ERROR;
 		}
+
+	/***** RECOVERY NOTIFICATIONS ARE GOOD TO GO AT THIS POINT *****/
+	if(hst->current_state == HOST_UP)
+		return OK;
 
 	/* check if we shouldn't renotify contacts about the host problem */
 	if(hst->no_more_notifications == TRUE) {

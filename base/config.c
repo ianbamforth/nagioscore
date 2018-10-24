@@ -107,7 +107,7 @@ int read_main_config_file(char *main_config_file) {
 	/* open the config file for reading */
 	if((thefile = mmap_fopen(main_config_file)) == NULL) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Cannot open main configuration file '%s' for reading!", main_config_file);
-		return ERROR;
+		exit(ERROR);
 		}
 
 	/* save the main config file macro */
@@ -136,7 +136,7 @@ int read_main_config_file(char *main_config_file) {
 			continue;
 
 		/* get the variable name */
-		if((temp_ptr = my_strtok(input, "=")) == NULL) {
+		if((temp_ptr = my_strtok_with_free(input, "=", FALSE)) == NULL) {
 			asprintf(&error_message, "NULL variable");
 			error = TRUE;
 			break;
@@ -148,7 +148,7 @@ int read_main_config_file(char *main_config_file) {
 			}
 
 		/* get the value */
-		if((temp_ptr = my_strtok(NULL, "\n")) == NULL) {
+		if((temp_ptr = my_strtok_with_free(NULL, "\n", FALSE)) == NULL) {
 			asprintf(&error_message, "NULL value");
 			error = TRUE;
 			break;
@@ -158,6 +158,7 @@ int read_main_config_file(char *main_config_file) {
 			error = TRUE;
 			break;
 			}
+		temp_ptr = my_strtok_with_free(NULL, "\n", TRUE);
 		strip(variable);
 		strip(value);
 
@@ -173,6 +174,15 @@ int read_main_config_file(char *main_config_file) {
 			if(read_resource_file(mac->x[MACRO_RESOURCEFILE]) == ERROR) {
 				error = TRUE;
 				}
+			}
+
+		else if(!strcmp(variable, "website_url")) {
+			int lth;
+			my_free(website_url);
+			website_url = strdup(value);
+			lth = strlen(website_url);
+			if (website_url[lth-1] == '/')
+				website_url[lth-1] = '\0';
 			}
 
 		else if(!strcmp(variable, "loadctl_options"))
@@ -920,7 +930,7 @@ int read_main_config_file(char *main_config_file) {
 				break;
 				}
 			}
-
+			
 		else if(!strcmp(variable, "status_update_interval")) {
 
 			status_update_interval = atoi(value);
@@ -1172,6 +1182,38 @@ int read_main_config_file(char *main_config_file) {
 		else if(!strcmp(variable,"host_down_disable_service_checks")) {
 			host_down_disable_service_checks = strtoul(value, NULL, 0);
 		}
+		else if(!strcmp(variable,"service_skip_check_dependency_status")) {
+			service_skip_check_dependency_status = atoi(value);
+			if(service_skip_check_dependency_status < -1 || service_skip_check_dependency_status > 3) {
+				asprintf(&error_message, "Illegal value for service_skip_check_dependency_status");
+				error = TRUE;
+				break;
+			}
+		}
+		else if(!strcmp(variable,"service_skip_check_parent_status")) {
+			service_skip_check_parent_status = atoi(value);
+			if(service_skip_check_parent_status < -1 || service_skip_check_parent_status > 3) {
+				asprintf(&error_message, "Illegal value for service_skip_check_parent_status");
+				error = TRUE;
+				break;
+			}
+		}
+		else if(!strcmp(variable,"service_skip_check_host_down_status")) {
+			service_skip_check_host_down_status = atoi(value);
+			if(service_skip_check_host_down_status < -1 || service_skip_check_host_down_status > 3) {
+				asprintf(&error_message, "Illegal value for service_skip_check_host_down_status");
+				error = TRUE;
+				break;
+			}
+		}
+		else if(!strcmp(variable,"host_skip_check_dependency_status")) {
+			host_skip_check_dependency_status = atoi(value);
+			if(host_skip_check_dependency_status < -1 || host_skip_check_dependency_status > 3) {
+				asprintf(&error_message, "Illegal value for host_skip_check_dependency_status");
+				error = TRUE;
+				break;
+			}
+		}
 		/* we don't know what this variable is... */
 		else {
 			asprintf(&error_message, "UNKNOWN VARIABLE");
@@ -1267,12 +1309,11 @@ int read_main_config_file(char *main_config_file) {
 	my_free(value);
 
 	/* make sure a log file has been specified */
-	strip(log_file);
-	if(!strcmp(log_file, "")) {
-		if(daemon_mode == FALSE)
-			printf("Error: Log file is not specified anywhere in main config file '%s'!\n", main_config_file);
-		return ERROR;
+	if(log_file == NULL) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Log file is not specified anywhere in main config file '%s'!", main_config_file);
+		exit(ERROR);
 		}
+	strip(log_file);
 
 	return OK;
 	}
@@ -1316,7 +1357,7 @@ int read_resource_file(char *resource_file) {
 		strip(input);
 
 		/* get the variable name */
-		if((temp_ptr = my_strtok(input, "=")) == NULL) {
+		if((temp_ptr = my_strtok_with_free(input, "=", FALSE)) == NULL) {
 			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: NULL variable - Line %d of resource file '%s'", current_line, resource_file);
 			error = TRUE;
 			break;
@@ -1327,7 +1368,7 @@ int read_resource_file(char *resource_file) {
 			}
 
 		/* get the value */
-		if((temp_ptr = my_strtok(NULL, "\n")) == NULL) {
+		if((temp_ptr = my_strtok_with_free(NULL, "\n", FALSE)) == NULL) {
 			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: NULL variable value - Line %d of resource file '%s'", current_line, resource_file);
 			error = TRUE;
 			break;
@@ -1336,6 +1377,7 @@ int read_resource_file(char *resource_file) {
 			error = TRUE;
 			break;
 			}
+		temp_ptr = my_strtok_with_free(NULL, "\n", TRUE);
 
 		/* what should we do with the variable/value pair? */
 

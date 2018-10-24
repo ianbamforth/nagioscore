@@ -39,32 +39,18 @@
 ### END INIT INFO
 
 # Our install-time configuration.
-prefix=@prefix@
-exec_prefix=@exec_prefix@
-NagiosBin=@bindir@/nagios
+NagiosBin=@bindir@/@nagios_name@
 NagiosCfgFile=@sysconfdir@/nagios.cfg
 NagiosCfgtestFile=@localstatedir@/nagios.configtest
 NagiosStatusFile=@localstatedir@/status.dat
 NagiosRetentionFile=@localstatedir@/retention.dat
 NagiosCommandFile=@localstatedir@/rw/nagios.cmd
+NagiosRunFile=@subsyslockfile@
 NagiosVarDir=@localstatedir@
-NagiosRunFile=@lockfile@
-NagiosLockDir=/var/lock/subsys
-NagiosLockFile=nagios
 NagiosCGIDir=@sbindir@
 NagiosUser=@nagios_user@
 NagiosGroup=@nagios_grp@
 checkconfig="true"
-
-# Source function library
-# Some *nix do not have an rc.d directory, so do a test first
-if [ -f /etc/rc.d/init.d/functions ]; then
-	. /etc/rc.d/init.d/functions
-elif [ -f /etc/init.d/functions ]; then
-	. /etc/init.d/functions
-elif [ -f /lib/lsb/init-functions ]; then
-	. /lib/lsb/init-functions
-fi
 
 # Load any extra environment variables for Nagios and its plugins.
 if test -f /etc/sysconfig/nagios; then
@@ -76,19 +62,37 @@ USE_RAMDISK=${USE_RAMDISK:-0}
 if test "$USE_RAMDISK" -ne 0 && test "$RAMDISK_SIZE"X != "X"; then
 	ramdisk=`mount |grep "${RAMDISK_DIR} type tmpfs"`
 	if [ "$ramdisk"X == "X" ]; then
-		mkdir -p -m 0755 ${RAMDISK_DIR}
-		mount -t tmpfs -o size=${RAMDISK_SIZE}m tmpfs ${RAMDISK_DIR}
-		mkdir -p -m 0755 ${RAMDISK_DIR}/checkresults
-		chown -h -R $NagiosUser:$NagiosGroup ${RAMDISK_DIR}
+		if [ ! -d ${RAMDISK_DIR} ]; then
+			mkdir -p -m 0755 ${RAMDISK_DIR}
+			if [ -d ${RAMDISK_DIR} ]; then
+				NagiosUserUID=`id -u ${NagiosUser}`
+				NagiosGroupGID=`id -g ${NagiosGroup}`
+				mount -t tmpfs -o uid=${NagiosUserUID},gid=${NagiosGroupGID},size=${RAMDISK_SIZE}m tmpfs ${RAMDISK_DIR}
+				su ${NagiosUser} -c "mkdir -m 0755 ${RAMDISK_DIR}/checkresults"
+			else
+				echo "ERROR: Unable to create ramdisk directory (${RAMDISK_DIR})"
+				exit 1
+			fi
+		fi
 	fi
 fi
 
 
 check_config ()
 {
-	rm -f "$NagiosCfgtestFile";
+	if test "$checkconfig" != "true"; then
+		return 0
+	fi
+
+	echo -n "Running configuration check... "
+
+	@BIN_RM@ -f "$NagiosCfgtestFile";
 	if test -e "$NagiosCfgtestFile"; then
 		echo "ERROR: Could not delete '$NagiosCfgtestFile'"
+		exit 8
+	fi
+	if ! su $NagiosUser -c "touch $NagiosCfgtestFile"; then
+		echo "ERROR: Could not create or update '$NagiosCfgtestFile'"
 		exit 8
 	fi
 
@@ -99,24 +103,18 @@ check_config ()
 
 	if test "$WARN" = "0" && test "${ERR}" = "0"; then
 		echo "OK - Configuration check verified" > $NagiosCfgtestFile
-		chmod 0644 $NagiosCfgtestFile
-		chown -h $NagiosUser:$NagiosGroup $NagiosCfgtestFile
-		/bin/rm "$TMPFILE"
+		@BIN_RM@ "$TMPFILE"
 		return 0
 	elif test "${ERR}" = "0"; then
 		# Write the errors to a file we can have a script watching for.
 		echo "WARNING: Warnings in config files - see log for details: $NagiosCfgtestFile" > $NagiosCfgtestFile
 		egrep -i "(^warning|^error)" "$TMPFILE" >> $NagiosCfgtestFile
-		chmod 0644 $NagiosCfgtestFile
-		chown -h $NagiosUser:$NagiosGroup $NagiosCfgtestFile
-		/bin/rm "$TMPFILE"
+		@BIN_RM@ "$TMPFILE"
 		return 0
 	else
 		# Write the errors to a file we can have a script watching for.
 		echo "ERROR: Errors in config files - see log for details: $NagiosCfgtestFile" > $NagiosCfgtestFile
 		egrep -i "(^warning|^error)" "$TMPFILE" >> $NagiosCfgtestFile
-		chmod 0644 $NagiosCfgtestFile
-		chown -h $NagiosUser:$NagiosGroup $NagiosCfgtestFile
 		cat "$TMPFILE"
 		exit 8
 	fi
@@ -125,10 +123,14 @@ check_config ()
 
 status_nagios ()
 {
-	if test -x $NagiosCGI/daemonchk.cgi; then
-		if $NagiosCGI/daemonchk.cgi -l $NagiosRunFile > /dev/null 2>&1; then return 0; fi
+	if test -x $NagiosCGIDir/daemonchk.cgi; then
+		if $NagiosCGIDir/daemonchk.cgi -l $NagiosRunFile > /dev/null 2>&1; then
+			return 0
+		fi
 	else
-		if ps -p $NagiosPID > /dev/null 2>&1; then return 0; fi
+		if ps -p $NagiosPID > /dev/null 2>&1; then 
+			return 0
+		fi
 	fi
 
 	return 1
@@ -145,38 +147,18 @@ printstatus_nagios ()
 
 killproc_nagios ()
 {
-	kill -s "$1" $NagiosPID
+	@BIN_KILL@ -s "$1" $NagiosPID
 }
 
 pid_nagios ()
 {
 	if test ! -f $NagiosRunFile; then
 		echo "No lock file found in $NagiosRunFile"
-		exit 1
+		return 1
 	fi
 
 	NagiosPID=`head -n 1 $NagiosRunFile`
 }
-
-remove_commandfile ()
-{
-	# Removing a stalled command file, while there are processes trying/waiting to write into it,
-	# will deadlock those processes in a blocking open() system call. To allow such processes to
-	# die on a broken pipe, the pipe must be opened for reading without actually reading from it,
-	# which is what dd does here. To avoid a chicken-egg problem, the pipe is renamed beforehand.
-	# In order for the dd to not deadlock when there is no writing process, it is executed in the
-	# background in a subshell together with an empty echo to have at least one writing process.
-	
-	# see http://unix.stackexchange.com/questions/335406/opening-named-pipe-blocks-forever-if-pipe-is-deleted-without-being-connected
-	
-	if [ -p $NagiosCommandFile ]; then
-		mv -f $NagiosCommandFile $NagiosCommandFile~
-		(dd if=$NagiosCommandFile~ count=0 2>/dev/null & echo -n "" >$NagiosCommandFile~)
-	fi
-	
-	rm -f $NagiosCommandFile $NagiosCommandFile~
-}
-
 
 # Check that nagios exists.
 if [ ! -f $NagiosBin ]; then
@@ -194,35 +176,33 @@ fi
 case "$1" in
 
 	start)
-		echo -n "Starting nagios:"
+		echo -n "Starting nagios: "
 
-		if test "$checkconfig" = "true"; then
-			check_config
-			# check_config exits on configuration errors.
-		fi
+		check_config
 
 		if test -f $NagiosRunFile; then
 			NagiosPID=`head -n 1 $NagiosRunFile`
 			if status_nagios; then
-				echo " another instance of nagios is already running."
+				echo "another instance of nagios is already running."
 				exit 0
 			fi
 		fi
 
-		touch $NagiosVarDir/nagios.log $NagiosRetentionFile
-		remove_commandfile
+		su $NagiosUser -c "touch $NagiosVarDir/nagios.log $NagiosRetentionFile"
+		@BIN_RM@ -f $NagiosCommandFile
 		touch $NagiosRunFile
-		chown -h $NagiosUser:$NagiosGroup $NagiosRunFile $NagiosVarDir/nagios.log $NagiosRetentionFile
 		$NagiosBin -d $NagiosCfgFile
-		if [ -d $NagiosLockDir ]; then touch $NagiosLockDir/$NagiosLockFile; fi
 
-		echo " done."
+		echo "done."
 		;;
 
 	stop)
-		echo -n "Stopping nagios:"
+		echo -n "Stopping nagios: "
 
 		pid_nagios
+		if [ $? -eq 1 ]; then
+			exit 0
+		fi
 		killproc_nagios TERM
 
 		# now we have to wait for nagios to exit and remove its
@@ -240,58 +220,51 @@ case "$1" in
 			fi
 		done
 		if status_nagios > /dev/null; then
-			echo ''
-			echo 'Warning - nagios did not exit in a timely manner - Killing it!'
+			echo ""
+			echo "Warning - nagios did not exit in a timely manner - Killing it!"
 			killproc_nagios KILL
 		else
-			echo ' done.'
+			echo "done."
 		fi
 
-		remove_commandfile
-		rm -f $NagiosStatusFile $NagiosRunFile $NagiosLockDir/$NagiosLockFile
+		@BIN_RM@ -f $NagiosStatusFile $NagiosRunFile $NagiosCommandFile
 		;;
 
 	status)
 		pid_nagios
+		if [ $? -eq 1 ]; then
+			exit 3
+		fi
 		printstatus_nagios
 		;;
 
 	checkconfig)
-		if test "$checkconfig" = "true"; then
-			printf "Running configuration check...\n"
-			check_config
-		fi
+		check_config
 
 		if [ $? -eq 0 ]; then
-			echo " OK."
+			echo "OK."
 		else
-			echo " CONFIG ERROR!  Check your Nagios configuration."
+			echo "CONFIG ERROR!  Check your Nagios configuration."
 			exit 1
 		fi
 		;;
 
 	restart)
-		if test "$checkconfig" = "true"; then
-			printf "Running configuration check...\n"
-			check_config
-		fi
+		check_config
 
 		$0 stop
 		$0 start
 		;;
 
 	reload|force-reload)
-		if test "$checkconfig" = "true"; then
-			printf "Running configuration check...\n"
-			check_config
-		fi
+		check_config
 
 		if test ! -f $NagiosRunFile; then
 			$0 start
 		else
 			pid_nagios
 			if status_nagios > /dev/null; then
-				printf "Reloading nagios configuration...\n"
+				echo -n "Reloading nagios configuration... "
 				killproc_nagios HUP
 				echo "done"
 			else

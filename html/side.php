@@ -1,7 +1,7 @@
 <?php
 include_once(dirname(__FILE__).'/includes/utils.inc.php');
 
-$this_version = '4.3.2';
+$this_version = '4.4.2';
 $link_target = 'main';
 ?>
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
@@ -32,6 +32,7 @@ $link_target = 'main';
 </div>
 
 <div class="navsection">
+	<?php include_once(dirname(__FILE__).'/quicklinks.php');?>
 	<div class="navsectiontitle">Current Status</div>
 	<div class="navsectionlinks">
 		<ul class="navsectionlinks">
